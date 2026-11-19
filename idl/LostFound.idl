@@ -1,0 +1,136 @@
+// LostFound - contrat CORBA (objets perdus et trouves du campus)
+// Compile par : idlj -fall -td gen idl/LostFound.idl
+// -> genere le package Java lostfound.corba (stubs, squelettes POA, Helpers, Holders)
+//
+// Les chaines sont des wstring pour transporter les accents sans erreur.
+// Toutes les operations, sauf register et login, exigent le JETON de session :
+// le serveur en deduit qui appelle et verifie ses droits.
+
+module lostfound {
+module corba {
+
+    typedef sequence<octet> Bytes;
+
+    struct UserInfo {
+        wstring id;
+        wstring login;
+        wstring firstName;
+        wstring lastName;
+        wstring contact;
+        wstring role;          // ADMIN ou USER
+        wstring status;        // EN_ATTENTE, ACTIF ou SUSPENDU
+        long long createdAt;
+        long items;            // nombre d'annonces publiees
+    };
+    typedef sequence<UserInfo> UserList;
+
+    struct Session {
+        wstring token;
+        UserInfo user;
+    };
+
+    struct ItemDraft {
+        wstring type;          // PERDU ou TROUVE
+        wstring title;
+        wstring description;
+        wstring category;
+        wstring place;
+        wstring date;          // AAAA-MM-JJ
+        wstring contact;
+    };
+
+    struct Item {
+        wstring id;
+        wstring type;
+        wstring title;
+        wstring description;
+        wstring category;
+        wstring place;
+        wstring date;
+        wstring contact;
+        wstring status;        // OUVERT ou RESOLU
+        wstring ownerId;
+        wstring ownerName;
+        long long createdAt;
+        boolean hasPhoto;
+        long long photoRev;    // change a chaque nouvelle photo
+        long claims;           // demandes en attente
+    };
+    typedef sequence<Item> ItemList;
+
+    struct Claim {
+        wstring id;
+        wstring itemId;
+        wstring itemTitle;
+        wstring itemType;
+        wstring claimantId;
+        wstring claimantName;
+        wstring claimantContact;
+        wstring message;
+        wstring status;        // EN_ATTENTE, ACCEPTEE ou REFUSEE
+        long long createdAt;
+    };
+    typedef sequence<Claim> ClaimList;
+
+    struct Stats {
+        long lostOpen;
+        long foundOpen;
+        long resolved;
+        long members;
+        long pendingUsers;
+        long pendingClaims;
+    };
+
+    // Erreur metier : identifiants faux, action interdite...
+    // auth = TRUE si la session n'est pas (ou plus) valide.
+    exception ServiceError {
+        wstring reason;
+        boolean auth;
+    };
+
+    // Implemente par le CLIENT (la passerelle web) : le serveur l'appelle
+    // a chaque changement. oneway = le serveur n'attend pas de reponse.
+    interface EventListener {
+        oneway void onEvent(in wstring kind, in wstring id, in wstring label);
+    };
+
+    // Implemente par le SERVEUR, publie dans le service de nommage sous "LostFound".
+    interface LostFoundService {
+        // comptes et sessions
+        wstring  register(in wstring firstName, in wstring lastName, in wstring userLogin,
+                          in wstring contact, in wstring password) raises (ServiceError);
+        Session  login(in wstring userLogin, in wstring password) raises (ServiceError);
+        void     logout(in wstring token);
+        UserInfo me(in wstring token) raises (ServiceError);
+        void     changePassword(in wstring token, in wstring oldPassword, in wstring newPassword) raises (ServiceError);
+        void     updateProfile(in wstring token, in wstring contact) raises (ServiceError);
+
+        // annonces
+        ItemList listItems(in wstring token, in wstring query, in wstring type,
+                           in wstring category, in wstring status) raises (ServiceError);
+        Item     getItem(in wstring token, in wstring itemId) raises (ServiceError);
+        Bytes    getPhoto(in wstring token, in wstring itemId) raises (ServiceError);
+        Item     createItem(in wstring token, in ItemDraft draft, in Bytes photo) raises (ServiceError);
+        Item     updateItem(in wstring token, in wstring itemId, in ItemDraft draft,
+                            in Bytes photo, in boolean removePhoto) raises (ServiceError);
+        Item     setItemStatus(in wstring token, in wstring itemId, in wstring status) raises (ServiceError);
+        void     deleteItem(in wstring token, in wstring itemId) raises (ServiceError);
+
+        // demandes de recuperation
+        Claim     createClaim(in wstring token, in wstring itemId, in wstring message) raises (ServiceError);
+        ClaimList myClaims(in wstring token) raises (ServiceError);
+        ClaimList receivedClaims(in wstring token) raises (ServiceError);
+        Claim     decideClaim(in wstring token, in wstring claimId, in boolean accept) raises (ServiceError);
+
+        // administration (role ADMIN verifie par le serveur)
+        UserList listUsers(in wstring token) raises (ServiceError);
+        void     setUserStatus(in wstring token, in wstring userId, in wstring status) raises (ServiceError);
+        void     deleteUser(in wstring token, in wstring userId, in boolean withItems) raises (ServiceError);
+        Stats    getStats(in wstring token) raises (ServiceError);
+
+        // temps reel (callbacks)
+        void subscribe(in EventListener listener);
+        void unsubscribe(in EventListener listener);
+    };
+};
+};
